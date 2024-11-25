@@ -1,93 +1,109 @@
+from flask import Flask, render_template, Response, request, jsonify
 import cv2
 import face_recognition
 import numpy as np
-import time
+import os
+import uuid
+import logging
 
-def list_cameras():
-    # List available camera indices
-    index = 0
-    available_cameras = []
-    
-    while True:
-        cap = cv2.VideoCapture(index)
-        if not cap.isOpened():
-            break
-        available_cameras.append(index)
-        cap.release()
-        index += 1
-    
-    return available_cameras
+app = Flask(__name__)
 
-def main():
-    print("Available cameras:")
-    cameras = list_cameras()
-    
-    if not cameras:
-        print("No cameras found.")
-        return
-    
-    for i in range(len(cameras)):
-        print(f"{i}: Camera {cameras[i]}")
-    
-    camera_choice = int(input("Select a camera index: "))
-    
-    if camera_choice < 0 or camera_choice >= len(cameras):
-        print("Invalid camera selection.")
-        return
-    
-    camera_index = cameras[camera_choice]
-    cap = cv2.VideoCapture(camera_index)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-    if not cap.isOpened():
-        print("Failed to open the camera.")
-        return
+# Directory to store user images
+image_directory = "user_images"
+if not os.path.exists(image_directory):
+    os.makedirs(image_directory)
 
-    # Load a sample image and learn how to recognize it.
-    known_image = face_recognition.load_image_file("person1.jpg")
-    known_encoding = face_recognition.face_encodings(known_image)[0]
+# Load all stored user images and their encodings
+def load_known_faces():
+    known_face_encodings = []
+    known_face_names = []
+    for filename in os.listdir(image_directory):
+        if filename.endswith(".jpg") or filename.endswith(".png"):
+            image_path = os.path.join(image_directory, filename)
+            image = face_recognition.load_image_file(image_path)
+            face_encodings = face_recognition.face_encodings(image)
+            if face_encodings:  # Check if at least one face encoding is found
+                face_encoding = face_encodings[0]
+                known_face_encodings.append(face_encoding)
+                known_face_names.append(filename.split('_')[0])
+    return known_face_encodings, known_face_names
 
-    print("Press 'q' to quit the video feed.")
+known_face_encodings, known_face_names = load_known_faces()
 
-    # Initialize the last printed time
-    last_printed_time = 0
-    message_interval = 5  # Interval in seconds
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to grab frame.")
-            break
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    try:
+        if request.method == 'POST':
+            # Log the incoming request files
+            logging.info(f"Request files: {request.files}")
+            
+            username = request.form.get('username')
+            file = request.files.get('image')
 
-        # Convert the frame from BGR to RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if username and file:
+                # Save the image with a random name linked to the username
+                filename = f"{username}_{uuid.uuid4().hex}.jpg"
+                file_path = os.path.join(image_directory, filename)
+                file.save(file_path)
 
-        # Find all face locations and encodings in the current frame
-        face_locations = face_recognition.face_locations(rgb_frame)
-        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+                # Reload known faces
+                global known_face_encodings, known_face_names
+                known_face_encodings, known_face_names = load_known_faces()
 
-        # Loop through each face found in the frame
-        for face_encoding in face_encodings:
-            # Compare the face encoding with the known face encoding
-            results = face_recognition.compare_faces([known_encoding], face_encoding)
+                return jsonify({"registered": True, "username": username})
+            else:
+                return jsonify({"registered": False, "error": "Username or file missing"})
+    except Exception as e:
+        logging.error(f"Error during registration: {e}")
+        return jsonify({"registered": False, "error": str(e)})
+    return render_template('register.html')
 
-            if results[0]:  # If a match was found
-                current_time = time.time()
-                if current_time - last_printed_time >= message_interval:
-                    print("Found a matching face!")
-                    last_printed_time = current_time
-                # Draw a rectangle around the face
-                top, right, bottom, left = face_locations[0]
-                cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
+@app.route('/authenticate', methods=['POST'])
+def authenticate():
+    username = request.form['username']
+    if username not in known_face_names:
+        return jsonify({"authenticated": False, "error": "Username not found"})
 
-        # Display the frame with any detected faces
-        cv2.imshow(f'Camera {camera_index}', frame)
-
-        # Press 'q' to exit
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
+    cap = cv2.VideoCapture(0)
+    success, frame = cap.read()
     cap.release()
-    cv2.destroyAllWindows()
+    if not success:
+        return jsonify({"authenticated": False, "error": "Failed to capture image from camera"})
 
-if __name__ == "__main__":
-    main()
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    face_encodings = face_recognition.face_encodings(rgb_frame)
+
+    for face_encoding in face_encodings:
+        user_indices = [i for i, name in enumerate(known_face_names) if name == username]
+        user_encodings = [known_face_encodings[i] for i in user_indices]
+        results = face_recognition.compare_faces(user_encodings, face_encoding)
+        if True in results:
+            return jsonify({"authenticated": True})
+
+    return jsonify({"authenticated": False})
+
+@app.route('/video_feed')
+def video_feed():
+    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+def gen_frames():
+    cap = cv2.VideoCapture(0)
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break
+        else:
+            ret, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+if __name__ == '__main__':
+    app.run(debug=True)

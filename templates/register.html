@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loading-screen" style="display: none;">
+        <div class="spinner"></div>
+        <p>Registering...</p>
+    </div>
+
+    <div class="container">
+        <h1>Register</h1>
+        <form id="register-form" action="/register" method="post" enctype="multipart/form-data">
+            <fieldset>
+                <legend>User Details</legend>
+                <label for="username">Username:</label>
+                <input type="text" name="username" id="username" placeholder="Enter your username" required>
+            </fieldset>
+            
+            <fieldset>
+                <legend>Profile Photo</legend>
+                <div class="input-container">
+                    <label for="image-upload" id="image-upload-label">Upload an Image:</label>
+                    <input type="file" name="image" accept="image/*" id="image-upload">
+                    <h2>Or</h2>
+                    <button type="button" id="start-camera">Use Camera</button>
+                </div>
+                <div id="camera-container" style="display: none;">
+                    <video id="video" width="640" height="480" autoplay></video>
+                    <button type="button" id="capture">Capture Photo</button>
+                </div>
+                <canvas id="canvas" width="640" height="480" style="display: none;"></canvas>
+                <img id="captured-image" style="display: none;">
+                <button type="button" id="retake" style="display: none;">Retake Photo</button>
+            </fieldset>
+            
+            
+            <button type="submit">Register</button>
+        </form>
+    </div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
