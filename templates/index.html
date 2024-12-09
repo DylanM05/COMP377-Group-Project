@@ -1,14 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Facial Recognition Authentication</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="container">
         <h1>Facial Recognition Authentication</h1>
+
+        <!-- Error Message Block -->
+        {% if error %}
+        <p style="color: red; font-weight: bold;">{{ error }}</p>
+        {% endif %}
+        <!-- End of Error Message Block -->
+
+
         <a href="/register" class="link-button">Register</a>
         <form action="/authenticate" method="post" class="auth-form">
             <fieldset>
@@ -21,4 +31,5 @@
     </div>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
+
 </html>
